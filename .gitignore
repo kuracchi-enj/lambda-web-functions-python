@@ -1,0 +1,23 @@
+# Python virtual environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment and database
+.env
+.env.*
+!.env.example
+/db.sqlite3
+/db.sqlite3-*
+
+# Node.js and CDK output
+node_modules/
+cdk.out/
+/infra/.lambda-build/
+/infra/cdk.context.json
+/infra/db-connection.json
+/infra/django-web-outputs.json
+
+# macOS
+.DS_Store
