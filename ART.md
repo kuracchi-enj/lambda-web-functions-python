@@ -88,7 +88,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     # 以下を追加
-    'rest_framework',
+    'rest_framework',   
     'posts',
 ]
 ```
@@ -643,9 +643,9 @@ def handler(event, context):
     return {"PhysicalResourceId": physical_id}
 ```
 
-マイグレーション用のEvent Functionが、Auroraのマスターユーザーで `manage.py migrate` を実行します。続いて、Secrets Managerの認証情報でAPI用のDBユーザー `django_web_api` を作成または更新し、投稿テーブルへの読み書きとID採番に必要な権限を付与します。Web FunctionはこのAPI用ユーザーでAuroraに接続します。
+マイグレーション用のEvent Functionが、Auroraのマスターユーザーで`manage.py migrate`を実行します。続いて、Secrets Managerの認証情報でAPI用のDBユーザー`django_web_api`を作成または更新し、投稿テーブルへの読み書きとID採番に必要な権限を付与します。Web FunctionはこのAPI用ユーザーでAuroraに接続します。
 
-cdkdはカスタムリソースのLambdaから `PhysicalResourceId` を直接受け取れます。このハンドラーは作成・更新時に処理を実行し、削除時はIDを返します。
+cdkdはカスタムリソースのLambdaから`PhysicalResourceId`を直接受け取れます。このハンドラーは作成・更新時に処理を実行し、削除時はIDを返します。
 
 ## 3. スタックを変更する
 
@@ -904,7 +904,7 @@ npx cdkd deploy DjangoWeb --region ap-northeast-1
 まず、ターミナルで以下を実行します。
 
 ```bash
-posts_api() {
+posts_api() {                                      
   /usr/local/aws/bin/python - "$@" <<'PY'
 import sys
 from hashlib import sha256
@@ -967,11 +967,41 @@ posts_api GET /api/posts/1/
 npx cdkd destroy
 ```
 
+# 今回の検証での注意
+
+## Lambda Web Functionsとは別にマイグレーション用Lambdaを用意
+
+`cdkd deploy`を実行した時のマイグレーションの実行を別のLambdaに切り出しています。そのため、それぞれにデプロイするためのリソースをスクリプトで用意してからデプロイを実行する設計にしています。
+
+Lambda Web Functions用のリソースに関しては、`main.py`, `manage.py`, `config`, `posts`をコピーし、AuroraとのTLS接続で使う東京リージョンのRDS CA証明書を同梱しています。
+
+マイグレーション用に関しては、Web用の中身をコピーし、`manage.py migrate`とAPI用DBユーザーの設定を実行する`migrate_handler.py`を追加しています。
+
+以上のように役割が異なるので、今回は分けるようにしました。
+
+:::note
+分けずにLambda Web Functions内でマイグレーションすることもできなくはなさそうですが、**Lambda Web FunctionsにデプロイされたWebアプリが`main.py`を起点として起動することからも、マイグレーションはここから切り離したほうが良いかも**しれないですね。
+:::
+
+# 今回の検証に使ったソースコード
+
+以下のリポジトリに検証に使ったソースコードをあげています。
+
+https://github.com/kuracchi-enj/lambda-web-functions-python
+
+:::note
+どうやったらTypeScriptを可読性高く書けるのかを知りたい...
+:::
+
 # まとめ
 
 Lambda Web FunctionsのPythonランタイムを試してみました。
 ちゃんとAPIを叩くことができたので、Djangoで作った画面ありのPython製WebアプリもLambda Web Functionsで動かすことができそうですね。
 
-ただ、DBのマイグレーションを実行するためのスクリプトを用意しなければいけないので、そこに注意が必要かなと思います。今回はLambda関数に切り出して、デプロイ時に呼び出して実行する方法を取りましたが、他にいい方法があれば...（思いつかんかったけど、こういうときにLambda MicroVMsを使うのがいいのかも。）
+ただ、DBのマイグレーションを実行するためのスクリプトを用意しなければいけないので、そこに注意が必要かなと思います。今回はLambda関数に切り出して、デプロイ時に呼び出して実行する方法を取りましたが、他にいい方法があれば...（マイグレーションに時間がかかる場合には、Lambda MicroVMsを使うのがいいのかも。）
+
+:::note
+Lambdaの最大実行時間が15→30分に伸びているので、基本Lambda関数のほうで大丈夫そうですけどね。（マイグレーションが30分以上かかることってあるのかな。めっちゃ規模がデカかったらあるかもだけど、ケースとしては少なそう）
+:::
 
 Elastic Beanstalkの`.ebextensions`みたいに、サービスネイティブに拡張スクリプトを実行できまっせみたいなのがあれば嬉しいかもなぁ...と思いつつ...
