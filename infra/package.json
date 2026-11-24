@@ -11,7 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@cdkd/cli": "^0.366.0",
+    "@cdkd/cli": "^0.368.0",
     "aws-cdk-lib": "^2.278.0",
     "constructs": "^10.8.1"
   }

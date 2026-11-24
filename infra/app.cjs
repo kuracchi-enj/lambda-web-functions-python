@@ -6,7 +6,6 @@ const {
   aws_lambda: lambda,
   aws_rds: rds,
   aws_secretsmanager: sm,
-  custom_resources: cr,
 } = cdk;
 
 function requirePackage(name, sourceFile) {
@@ -71,6 +70,8 @@ const db = new rds.DatabaseCluster(stack, "Aurora", {
   removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
 });
 
+const dbSecret = db.secret;
+
 const connector = new lambda.NetworkConnector(stack, "WebEgress", {
   configuration: lambda.NetworkConnectorConfiguration.vpcEgress({
     computeType: lambda.NetworkConnectorComputeType.WEB_FUNCTION,
@@ -81,29 +82,6 @@ const connector = new lambda.NetworkConnector(stack, "WebEgress", {
 const djangoKey = new sm.Secret(stack, "DjangoSecretKey", {
   generateSecretString: { passwordLength: 64 },
 });
-
-const masterSecretArnPath = "DBClusters.0.MasterUserSecret.SecretArn";
-// cdkd 0.366 does not expose MasterUserSecret.SecretArn on AWS::RDS::DBCluster.
-const masterSecretLookup = new cr.AwsCustomResource(stack, "AuroraMasterSecret", {
-  resourceType: "Custom::AuroraMasterSecret",
-  onUpdate: {
-    service: "RDS",
-    action: "describeDBClusters",
-    parameters: { DBClusterIdentifier: db.clusterIdentifier },
-    physicalResourceId: cr.PhysicalResourceId.of(db.clusterResourceIdentifier),
-    outputPaths: [masterSecretArnPath],
-    logging: cr.Logging.withDataHidden(),
-  },
-  policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-    resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-  }),
-  installLatestAwsSdk: false,
-});
-const dbSecret = sm.Secret.fromSecretCompleteArn(
-  stack,
-  "MigrationDbSecret",
-  masterSecretLookup.getResponseField(masterSecretArnPath),
-);
 
 const apiDbSecret = new sm.Secret(stack, "DjangoApiDbSecret", {
   generateSecretString: {

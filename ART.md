@@ -359,7 +359,7 @@ cdkdでデプロイしますが、cdkdで扱うスタックはCDKと同じでい
 mkdir -p infra
 cd infra
 npm init -y
-npm install aws-cdk-lib@2.278.0 constructs @cdkd/cli@0.366.0
+npm install aws-cdk-lib@2.278.0 constructs @cdkd/cli@0.368.0
 ```
 
 次に、`cdk.json`を用意します。
@@ -660,7 +660,6 @@ const {
   aws_lambda: lambda,
   aws_rds: rds,
   aws_secretsmanager: sm,
-  custom_resources: cr,
 } = cdk;
 
 function requirePackage(name, sourceFile) {
@@ -725,6 +724,8 @@ const db = new rds.DatabaseCluster(stack, "Aurora", {
   removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
 });
 
+const dbSecret = db.secret;
+
 const connector = new lambda.NetworkConnector(stack, "WebEgress", {
   configuration: lambda.NetworkConnectorConfiguration.vpcEgress({
     computeType: lambda.NetworkConnectorComputeType.WEB_FUNCTION,
@@ -735,29 +736,6 @@ const connector = new lambda.NetworkConnector(stack, "WebEgress", {
 const djangoKey = new sm.Secret(stack, "DjangoSecretKey", {
   generateSecretString: { passwordLength: 64 },
 });
-
-const masterSecretArnPath = "DBClusters.0.MasterUserSecret.SecretArn";
-// cdkd 0.366 does not expose MasterUserSecret.SecretArn on AWS::RDS::DBCluster.
-const masterSecretLookup = new cr.AwsCustomResource(stack, "AuroraMasterSecret", {
-  resourceType: "Custom::AuroraMasterSecret",
-  onUpdate: {
-    service: "RDS",
-    action: "describeDBClusters",
-    parameters: { DBClusterIdentifier: db.clusterIdentifier },
-    physicalResourceId: cr.PhysicalResourceId.of(db.clusterResourceIdentifier),
-    outputPaths: [masterSecretArnPath],
-    logging: cr.Logging.withDataHidden(),
-  },
-  policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-    resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-  }),
-  installLatestAwsSdk: false,
-});
-const dbSecret = sm.Secret.fromSecretCompleteArn(
-  stack,
-  "MigrationDbSecret",
-  masterSecretLookup.getResponseField(masterSecretArnPath),
-);
 
 const apiDbSecret = new sm.Secret(stack, "DjangoApiDbSecret", {
   generateSecretString: {
@@ -828,7 +806,9 @@ djangoKey.grantRead(fn).applyBefore(fn.resourceRevision);
 app.synth();
 ```
 
-Auroraの接続先は、CDKの `db.clusterEndpoint.hostname` で参照します。マスターシークレットのARNは、Auroraの作成後に `AwsCustomResource` が `DescribeDBClusters` で取得します。
+Auroraの接続先は `db.clusterEndpoint.hostname`、マスターシークレットのARNは `db.secret.secretArn` で参照します。`db.secret` は、`manageMasterUserPassword: true` でRDSに管理を任せたシークレットです。
+
+2026年11月24日追記。検証当初のcdkd 0.366.0では、Auroraの `MasterUserSecret.SecretArn` を参照できなかったため、`AwsCustomResource` で `DescribeDBClusters` を呼び出していました。cdkd 0.368.0で修正されたため、上の手順とコードは標準の参照に更新しました。 [cdkdの修正PR](https://github.com/go-to-k/cdkd/pull/6914)
 
 同じデプロイの中で、Auroraを作成し、Lambda関数でマイグレーションを実行してから、Web Functionのリビジョンを作成します。
 
